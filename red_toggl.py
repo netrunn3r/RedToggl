@@ -22,6 +22,10 @@ def create_empty_config():
     cfg.set('toggl', 'api_token', 'your_api_token')
     cfg.set('toggl', 'timezone', 'UTC')
     #cfg.set('toggl', 'time_format', '%I:%M%p')
+    cfg.add_section('redmine')
+    cfg.set('redmine', 'api_token', 'your_api_token')
+    cfg.set('redmine', 'url', 'https://your_redmine.com')
+    cfg.set('redmine', 'ssl_verify', 'False')
     with open(os.path.expanduser('~/.redtogglrc'), 'w') as cfgfile:
         cfg.write(cfgfile)
     os.chmod(os.path.expanduser('~/.redtogglrc'), 0o600)
@@ -145,7 +149,12 @@ def find_toggl_cid(cid):
 
     return {"name": name}
 
+def auth_redmine():
+    url = get_conf_key('redmine', 'url')
+    api = get_conf_key('redmine', 'api_token')
+    ssl_verify = get_conf_key('redmine', 'ssl_verify')
 
+    return Redmine(url, key=api, requests={'verify': ssl_verify})
 
 
 cfg = configparser.ConfigParser()
