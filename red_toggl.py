@@ -1,21 +1,26 @@
 #!/usr/bin/env python
 import requests
 import sys
-#import time
 from pytz import timezone
 import json
 import datetime
-#import dateutil.parser
-#import optparse
 import os
 import configparser
 from six.moves import urllib
+#import urllib3
 from redminelib import Redmine
 import argparse
 from colorama import Fore, Style
+import requests
+from requests.packages.urllib3.exceptions import InsecureRequestWarning
 
+requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 TOGGL_URL = "https://www.toggl.com/api/v8/"
 cfg = configparser.ConfigParser()
+#urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+# switch to urllib3
+# update issue in rm, when task in toggl change
+# presales task
 
 def create_empty_config():
     """
@@ -184,7 +189,7 @@ def get_project_from_rm(redmine, task):
             if project["name"].lower() == project_name_rm:
                 return (project["id"], project["time_entry_activities"])
         # if no project founded, return error    
-        print("There is no project '{} - {}' in Redmine. Contact PM to create one or assign to you.".format(task["client"], task["project"]))
+        print(Fore.RED + "There is no project '{} - {}' in Redmine. Contact PM to create one or assign to you.".format(task["client"], task["project"]) + Style.RESET_ALL)
         return (-1, -1)   # no project
 
     return (project["id"], project["time_entry_activities"])
@@ -195,7 +200,7 @@ def get_issue_from_rm(redmine, task, project_id):
         if issue["subject"] == task["name"]:
             return issue["id"]
 
-    print("There is no issue '{}' in project '{} - {}' - adding new one".format(task["name"], task["client"], task["name"]))
+    print(Fore.YELLOW + "There is no issue '{}' in project '{} - {}' - adding new one".format(task["name"], task["client"], task["project"]) + Style.RESET_ALL)
     return -2   # no issue
 
 def new_issue(redmine, task_name, project_id):
@@ -207,9 +212,30 @@ def new_issue(redmine, task_name, project_id):
             status_id=status_id,
             assigned_to_id=my_id)
 
-    print("Added new issue:")
-    for key,val in issue:
-        print("{}: {}".format(key, val))
+#    print("Added new issue:")
+#    for key,val in issue:
+#        print("{}: {}".format(key, val))
+
+    print("\
+    Issue ID: {}\n\
+    Subject: {}\n\
+    Project ID: {} ({})\n\
+    Tracker ID: {} ({})\n\
+    Status ID: {} ({})\n\
+    Priority ID: {} ({})\n\
+    Author ID: {} ({})\n\
+    Assigned to ID: {} ({})"\
+    .format(
+        issue["id"],
+        issue["subject"],
+        issue["project"]["id"], issue["project"]["name"],
+        issue["tracker"]["id"], issue["tracker"]["name"],
+        issue["status"]["id"], issue["status"]["name"],
+        issue["priority"]["id"], issue["priority"]["name"],
+        issue["author"]["id"], issue["author"]["name"],
+        issue["assigned_to"]["id"], issue["assigned_to"]["name"]))
+
+
 
     return issue["id"]
 
@@ -218,19 +244,19 @@ def get_status_id(redmine, status_name):
     for status in statuses:
         if status_name == status["name"]:
             return status["id"]
-    print("There is no issue status like '{}'. Setting no value for this field".format(status_name))
+    print(Fore.YELLOW  + "There is no issue status like '{}'. Setting no value for this field".format(status_name) + Style.RESET_ALL)
     return None   # no issue_status
     
 def get_activity(task, project_activities):
     if not task["tags"]:
-        print("There is no tags in toggl, please correct it in task '{}' ({} -> {})".format(task["name"], task["project"], task["client"]))
+        print(Fore.RED + "There is no tags in toggl, please correct it in task '{}' ({} -> {})".format(task["name"], task["project"], task["client"]) + Style.RESET_ALL)
         return (-3, -3)   # no activity in toggl
 
     for activity in project_activities:
         if activity["name"] in task["tags"]:
             return (activity["id"], activity["name"])
 
-    print("There is no '{}' activity in Redmine, please correct it".format(task["tags"]))
+    print(Fore.RED + "There is no '{}' activity in Redmine, please correct it".format(task["tags"]) + Style.RESET_ALL)
     return (-4, -4)   # no activity in rm
 
 def get_authors_from_toggl(task):
