@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 import requests
-import sys
+#import sys
 from pytz import timezone
 import json
 import datetime
@@ -11,16 +11,16 @@ from six.moves import urllib
 from redminelib import Redmine
 import argparse
 from colorama import Fore, Style
-import requests
-from requests.packages.urllib3.exceptions import InsecureRequestWarning
 
-requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
+requests.packages.urllib3.disable_warnings(requests.packages.urllib3.exceptions.InsecureRequestWarning)
 TOGGL_URL = "https://www.toggl.com/api/v8/"
-cfg = configparser.ConfigParser()
 #urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 # switch to urllib3
 # update issue in rm, when task in toggl change
 # presales task
+# update task, when issue done
+# add comments when updating rm (in time entry and in issue)
+# all issue are set to Realization - is it ok?
 
 def create_empty_config():
     """
@@ -39,7 +39,7 @@ def create_empty_config():
         cfg.write(cfgfile)
     os.chmod(os.path.expanduser('~/.redtogglrc'), 0o600)
 
-def get_conf_key(section, key):
+def get_conf_key(cfg, section, key):
     """
     Returns the value of the configuration variable identified by the
     given key within the given section of the configuration file. Raises
@@ -47,10 +47,13 @@ def get_conf_key(section, key):
     """
     return cfg.get(section, key).strip()
 
-def auth_toggl():
-    return requests.auth.HTTPBasicAuth(get_conf_key('toggl', 'api_token'), 'api_token')
+def auth_toggl(cfg):
+    return requests.auth.HTTPBasicAuth(get_conf_key(cfg, 'toggl', 'api_token'), 'api_token')
 
 def print_toggl_data(data):
+    """
+    Print raw data from toggl. Debug purpose
+    """
     for i in data:
         for key,val in i.items():
             print(key, ": ", val)
@@ -67,9 +70,10 @@ def get_toggl_data(url_tail, wid=0, req=None, params=None):
     Get list of projects / clients / time_entries from workspace.
     To get projects, user have to be an admin
     """
+    cfg = get_cfg_file()
     if url_tail == "projects":
         url = "{}{}".format(TOGGL_URL, "workspaces")
-        r = requests.get(url, auth=auth_toggl())
+        r = requests.get(url, auth=auth_toggl(cfg))
         data = json.loads(r.text)
         url_tail = "workspaces/" + str(data[wid]['id']) + "/projects"
 
@@ -78,6 +82,9 @@ def get_toggl_data(url_tail, wid=0, req=None, params=None):
     return json.loads(r.text)
 
 def get_toggl_time_entries(days):
+    """
+    Return from toggl tasks from last X days
+    """
     zone = timezone("Europe/Warsaw")
     toggl_entries = []
     projects = get_toggl_data("projects")
@@ -125,6 +132,9 @@ def get_toggl_time_entries(days):
     return tasks
 
 def find_toggl_pid(pid):
+    """
+    Find project name in toggl by its id
+    """
     projects = get_toggl_data("projects");
     found = False
 
@@ -147,6 +157,9 @@ def find_toggl_pid(pid):
     return {"name": name, "cid": cid}
 
 def find_toggl_cid(cid):
+    """
+    Find client name in toggl by client id
+    """
     clients = get_toggl_data("clients");
     found = False
 
@@ -170,13 +183,22 @@ def find_toggl_cid(cid):
     return {"name": name}
 
 def auth_redmine():
-    url = get_conf_key('redmine', 'url')
-    api = get_conf_key('redmine', 'api_token')
-    ssl_verify = get_conf_key('redmine', 'ssl_verify') == 'True' # fix me!
+    """
+    Authenticate to redmine and return Redmine object
+    """
+    cfg = get_cfg_file()
+    url = get_conf_key(cfg, 'redmine', 'url')
+    api = get_conf_key(cfg, 'redmine', 'api_token')
+    ssl_verify = get_conf_key(cfg, 'redmine', 'ssl_verify') == 'True' # fix me!
 
     return Redmine(url, key=api, requests={'verify': ssl_verify})
 
 def get_project_from_rm(redmine, task):
+    """
+    Get specific project from redmine. First try to find by project id in redmine (when named like in toggl), when nothing return then get all projects from redmine and search by name (eg. when someone change project name in redmine).
+    Project name in redmine have to by 'client - project_name' in toggl.
+    Return tuple with project id and time entries
+    """
     fast_project_name_rm = task["client"] + "-" + task["project"]
     fast_project_identifier_rm = fast_project_name_rm.replace(" ", "-").lower()
     project_name_rm = (task["client"] + " - " + task["project"]).lower()
@@ -195,6 +217,9 @@ def get_project_from_rm(redmine, task):
     return (project["id"], project["time_entry_activities"])
 
 def get_issue_from_rm(redmine, task, project_id):
+    """
+    Get issue from redmine and return its id
+    """
     issues = redmine.issue.filter(project_id=project_id, status_id='*')
     for issue in issues:
         if issue["subject"] == task["name"]:
@@ -203,14 +228,39 @@ def get_issue_from_rm(redmine, task, project_id):
     print(Fore.YELLOW + "There is no issue '{}' in project '{} - {}' - adding new one".format(task["name"], task["client"], task["project"]) + Style.RESET_ALL)
     return -2   # no issue
 
-def new_issue(redmine, task_name, project_id):
+def new_issue(redmine, task, project_id):
+    """
+    Create new issue in redmine and return its id
+    """
     status_id = get_status_id(redmine, "Realization")
     my_id = redmine.user.get("current")["id"]
-    issue = redmine.issue.create(
-            project_id=project_id,
-            subject=task_name,
-            status_id=status_id,
-            assigned_to_id=my_id)
+#    issue = redmine.issue.create(
+#            project_id=project_id,
+#            subject=task["name"],
+#            status_id=status_id,
+#            assigned_to_id=my_id)
+### TEMPORARY HACK! ###
+# for now, we have one project where we have to choose salesperson
+# we are working on presales module, which will handle creating presales tasks
+    issue = redmine.issue.new()
+    issue.project_id = project_id
+    issue.subject=task["name"]
+    issue.status_id=status_id
+    issue.assigned_to_id=my_id
+    if project_id == 93:        ## Presales tasks's
+        ss = ""
+        for tag in task["tags"]:
+            if tag != "Preparing an offer": # hope that there will be no other tags than 
+                ss = tag
+                break                       # salesperson and 'preparing an offer'
+        if not ss:
+            print(Fore.RED + "No salesperson in task '{}'".format(task["name"]) + Style.RESET_ALL)
+            return -100     # no salesperson
+        issue.custom_fields = [{'id': 9, 'name': 'Salesperson', 'value': ss}]
+        print("    Salesperson: {}".format(ss))
+
+    issue.save()
+### END HACK ###
 
 #    print("Added new issue:")
 #    for key,val in issue:
@@ -240,6 +290,11 @@ def new_issue(redmine, task_name, project_id):
     return issue["id"]
 
 def get_status_id(redmine, status_name):
+    """
+    Return issue status id by issue status name.
+    Issue status name for example can be "New", "Realization", "Done", "Cancelled"
+
+    """
     statuses = redmine.issue_status.all()
     for status in statuses:
         if status_name == status["name"]:
@@ -248,6 +303,11 @@ def get_status_id(redmine, status_name):
     return None   # no issue_status
     
 def get_activity(task, project_activities):
+    """
+    Find in toggl tags, project activities from redmine. 
+    Creating new time entry in redmine, we have to choose time_entry_activities (which are global in project, so we can call them project_activities). In toggl we choose by taking proper tag.
+    Return matching redmine time_entry_activities / toggl tag
+    """
     if not task["tags"]:
         print(Fore.RED + "There is no tags in toggl, please correct it in task '{}' ({} -> {})".format(task["name"], task["project"], task["client"]) + Style.RESET_ALL)
         return (-3, -3)   # no activity in toggl
@@ -260,12 +320,19 @@ def get_activity(task, project_activities):
     return (-4, -4)   # no activity in rm
 
 def get_authors_from_toggl(task):
+    """
+    In *OUR* redmine, we have custom field 'Praca autorska'. We are checking if there is 'Autorska' tag in toggl, if so we set 'Praca autorska' in redmine during creating new issue.
+    Return exact value to pass to custom field in redmine
+    """
     if "Autorska" in task["tags"]:
         return [{'id': 1, 'name': 'Praca autorska', 'value': '1'}]
     else:
         return [{'id': 1, 'name': 'Praca autorska', 'value': '0'}]
     
 def parse_date(date_str): # we have 2018-01-30T08:27:28+00:00
+    """
+    Parse date to match format in redmine. Creating from scratch to be sure that it is correct
+    """
     date_splited = date_str.split('+')
     date_splited[1] = date_splited[1].replace(':', '')
     date_joined = '+'.join(date_splited)
@@ -274,6 +341,9 @@ def parse_date(date_str): # we have 2018-01-30T08:27:28+00:00
     return date.date() # return only date
 
 def print_time_entry(te, activity_name, task_name):
+    """
+    Print redmine time entry
+    """
     print("\
     Issue ID: {} ({})\n\
     Spent on: {}\n\
@@ -291,6 +361,10 @@ def print_time_entry(te, activity_name, task_name):
 
 
 def check_time_entry_exist(redmine, task, issue_id, activity_name):
+    """
+    When inserting new time entry from toggl, check if it already exist. We compare value in comment if it is the same as toggl task id.
+    Return >=0 when there is no time entry and <0 if it already is
+    """
     time_entries = redmine.time_entry.filter(
             issue_id=issue_id,
             spent_on=parse_date(task["start"]),
@@ -311,6 +385,9 @@ def check_time_entry_exist(redmine, task, issue_id, activity_name):
 
 
 def create_time_entry_in_rm(redmine, task):
+    """
+    Create new time entry in redmine and put in comment toggl task id by which we will check if time entry was already created or not
+    """
     (project_id, project_activities) = get_project_from_rm(redmine, task)
     if project_id < 0:
         return 
@@ -321,7 +398,7 @@ def create_time_entry_in_rm(redmine, task):
 
     issue_id = get_issue_from_rm(redmine, task, project_id)
     if issue_id < 0:
-        issue_id = new_issue(redmine, task["name"], project_id)
+        issue_id = new_issue(redmine, task, project_id)
 
     spent_on = parse_date(task["start"])
     hours = task["hours"]
@@ -341,11 +418,18 @@ def create_time_entry_in_rm(redmine, task):
     print(Fore.GREEN + "Adding new time entry:" + Style.RESET_ALL)
     print_time_entry(time_entry, activity_name, task["name"])
 
-def main(args):
+def get_cfg_file():
+    """
+    Create empty config file if it not exist. If present, read it and return ConfigParser object
+    """
+    cfg = configparser.ConfigParser()
     if cfg.read(os.path.expanduser('~/.redtogglrc')) == []:
         create_empty_config()
         raise IOError("Missing ~/.togglrc. A default has been created for editing.")
+    return cfg
 
+
+def main(args):
     redmine = auth_redmine()
     print(Fore.MAGENTA + ("=> Getting tasks from toggl").upper() + Style.RESET_ALL)
     tasks = get_toggl_time_entries(args.days)
@@ -361,13 +445,7 @@ if __name__ == "__main__":
     main(args)
 
 
-
-#0. sprawdz jakim jestes userem [ user = redmine.user.get('current') ]
-#1. sprawdz czy istnieje projekt
-#2. jesli tak, wyszukaj issue, jak nie zwroc blad
-#3. jesli ejst issue, sprawdz czy jest odowiedni log time, jesli nie dodaj issue i czas
-#4. jesli jest log time, idz dalej, jak nie ma to dodaj i idz dalej
-
+# notes:
 #issues = redmine.issue.filter(project_id='parp-testy-penetracyjne-sieci', status_id='*')
 #for i in issues:
 #    print(i.subject)
@@ -375,5 +453,3 @@ if __name__ == "__main__":
 #issues[4].subject
 #list(issues[4])
 #list(redmine.issue.get(112))
-# update 
-

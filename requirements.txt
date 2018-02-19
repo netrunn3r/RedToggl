@@ -1,1 +1,2 @@
 python-redmine
+colorama
