@@ -16,6 +16,9 @@ Just install modules from requirements.txt
 For now, we have to create manually projects and clients in toggl. In redmine, projects have to be create in schema: "Client name - Project name". Based on that, RedToggl will match projects in toggl and in redmine.
 For creating new log time in redmine we normaly have to choose time entry activity. That time entry have to be created in toggl tags.
 
+## First run and configuration
+When RedToggl is run for the first time it create config file in ~/.redtogglrc. In that file you have to put api keys from toggl and redmine. Additionally you have to put there your redmine address.
+
 ## *OUR* customization
 I create this tool for myself to work on toggl tasks, not in redmine log times which is our company main tool to log our work time. We have some customization which you can find in code:
 1. All new issues are created with "Realization" status
