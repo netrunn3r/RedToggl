@@ -21,6 +21,9 @@ TOGGL_URL = "https://www.toggl.com/api/v8/"
 # update task, when issue done
 # add comments when updating rm (in time entry and in issue)
 # all issue are set to Realization - is it ok?
+# check if api key is correct
+# add log file
+# we have 'redminelib.exceptions.ForbiddenError: Requested resource is forbidden' when adding issue to project which user dont have access to
 
 def create_empty_config():
     """
@@ -78,7 +81,7 @@ def get_toggl_data(url_tail, wid=0, req=None, params=None):
         url_tail = "workspaces/" + str(data[wid]['id']) + "/projects"
 
     url = "{}{}".format(TOGGL_URL, url_tail)
-    r = requests.get(url, auth=auth_toggl())
+    r = requests.get(url, auth=auth_toggl(cfg))
     return json.loads(r.text)
 
 def get_toggl_time_entries(days):
